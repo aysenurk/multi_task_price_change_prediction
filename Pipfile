@@ -17,6 +17,8 @@ numpy = "*"
 scipy = "*"
 seaborn = "*"
 jupyterlab = "*"
+cctx = "*"
+ccxt = "*"
 
 [requires]
 python_version = "3"
