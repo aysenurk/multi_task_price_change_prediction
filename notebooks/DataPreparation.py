@@ -31,7 +31,7 @@ def get_data(currency_lst,
             if remove_trend:
                 from statsmodels.tsa.seasonal import seasonal_decompose
                 components = seasonal_decompose(df["close"], model="additive")
-                df["close"] =- components.trend
+                df["close"] -= components.trend
                    
             if n_classes == 3:
                 df['pct_diff'] = df['close'].pct_change()
