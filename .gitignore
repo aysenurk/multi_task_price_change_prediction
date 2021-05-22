@@ -130,6 +130,6 @@ dmypy.json
 
 # Weights & Biases
 /wandb
-
+/notebooks/wandb
 # Dask
 dask-worker-space
