@@ -27,11 +27,6 @@ def get_data(currency_lst,
             
             if log_price:
                 df["close"] = df["close"].apply(np.log)
-      
-            if remove_trend:
-                from statsmodels.tsa.seasonal import seasonal_decompose
-                components = seasonal_decompose(df["close"], model="additive")
-                df["close"] -= components.trend
                    
             if n_classes == 3:
                 df['pct_diff'] = df['close'].pct_change()
@@ -47,6 +42,11 @@ def get_data(currency_lst,
             else:
                 df['diff'] = df['close'].diff()
                 change_dir = df['diff'].apply(lambda x: 0 if x <= 0 else 1)
+                
+            if remove_trend:
+                from statsmodels.tsa.seasonal import seasonal_decompose
+                components = seasonal_decompose(df["close"], model="additive")
+                df["close"] -= components.trend
             
             df.insert(loc=0, column="change_dir", value=change_dir)   
             df.dropna(inplace=True)       
