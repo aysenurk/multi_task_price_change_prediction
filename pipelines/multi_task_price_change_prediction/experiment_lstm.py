@@ -19,6 +19,8 @@ parser = ArgumentParser()
 parser.add_argument("-cl", "--currency-list", nargs="+", default=[])
 parser.add_argument("-lstm", "--lstm-list", nargs="+", default=[])
 parser.add_argument("-trend", default=bool)
+parser.add_argument("-imfs", default=bool)
+parser.add_argument("-indicators", default=bool)
 parser.add_argument("-weight", default=bool)
 parser.add_argument("-classes", default=int)
 
@@ -26,6 +28,8 @@ args = parser.parse_args()
 n_classes = int(args.classes)
 currency_list = args.currency_list
 remove_trend = bool(int(args.trend))
+imfs = bool(int(args.imfs))
+indicators =  bool(int(args.indicators))
 loss_weight_calculate = bool(int(args.weight))
 lstm_hidden_sizes = [int(size) for size in args.lstm_list]
 
@@ -239,7 +243,7 @@ class LSTM_based_classification_model(pl.LightningModule):
         
         loss = (torch.tensor(0.0, device="cuda:0", requires_grad=True) + \
                 torch.tensor(0.0, device="cuda:0", requires_grad=True)) 
-        # araştırılabilir
+        # araÅŸtÄ±rÄ±labilir
         for i in range(self.num_tasks):
             x, y = batch[self.currencies[i] + "_window"], batch[self.currencies[i] + "_label"]
 
@@ -285,7 +289,7 @@ class LSTM_based_classification_model(pl.LightningModule):
 
             output = self(x, i)
 #             print(y, torch.max(output, dim=1)[1])
-#             print(F.softmax(output)) # mantıken fark etmiyor
+#             print(F.softmax(output)) # mantÄ±ken fark etmiyor
             loss += self.cross_entropy_loss[i](output, y)
             
             acc = self.accuracy_score(torch.max(output, dim=1)[1], y)
@@ -345,6 +349,8 @@ config = CONFIG.copy()
 config.update({"n_classes": n_classes,
           "currency_list": currency_list,
           "remove_trend": remove_trend,
+          "indicators": indicators,
+          "imfs": imfs
           "lstm_hidden_sizes": lstm_hidden_sizes,
           "loss_weight_calculate": loss_weight_calculate})
 
@@ -355,6 +361,8 @@ N_CLASSES = config["n_classes"]
 LSTM_HIDDEN_SIZES = config["lstm_hidden_sizes"]
 BIDIRECTIONAL = config["bidirectional"]
 REMOVE_TREND =config["remove_trend"]
+INDICATORS = config["indicators"]
+IMFS = config["imfs"]
 LOSS_WEIGHT_CALCULATE = config["loss_weight_calculate"]
 
 TRAIN_PERCENTAGE, VAL_PERCENTAGE, TEST_PERCENTAGE = config["dataset_percentages"] 
@@ -371,8 +379,8 @@ X, y, features, dfs = get_data(CURRENCY_LST,
                              neutral_quantile = NEUTRAL_QUANTILE,
                              log_price=True,
                              remove_trend=REMOVE_TREND,
-                             include_indicators = False,
-                             include_imfs = False
+                             include_indicators = INDICATORS,
+                             include_imfs = IMFS
                             )
 INPUT_FEATURE_SIZE = X.shape[-1]
 

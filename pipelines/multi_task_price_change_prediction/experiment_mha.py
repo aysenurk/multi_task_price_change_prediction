@@ -23,6 +23,8 @@ from argparse import ArgumentParser
 parser = ArgumentParser()
 parser.add_argument("-cl", "--currency-list", nargs="+", default=[])
 parser.add_argument("-trend", default=bool)
+parser.add_argument("-indicators", default=bool)
+parser.add_argument("-imfs", default=bool)
 parser.add_argument("-weight", default=bool)
 parser.add_argument("-classes", default=int)
 
@@ -30,6 +32,8 @@ args = parser.parse_args()
 n_classes = int(args.classes)
 currency_list = args.currency_list
 remove_trend = bool(int(args.trend))
+imfs = bool(int(args.imfs))
+indicators = bool(int(args.indicators))
 loss_weight_calculate = bool(int(args.weight))
 
 class TimeSeriesDataset(Dataset):
@@ -439,6 +443,8 @@ config = CONFIG.copy()
 config.update({"n_classes": n_classes,
           "currency_list": currency_list,
           "remove_trend": remove_trend,
+          "indicators": indicators,
+          "imfs": imfs,
           "loss_weight_calculate": loss_weight_calculate})
 
 MODEL_NAME = name_model(config)
@@ -446,6 +452,8 @@ MODEL_NAME = name_model(config)
 CURRENCY_LST = config["currency_list"]
 N_CLASSES = config["n_classes"]
 REMOVE_TREND =config["remove_trend"]
+INDICATORS = config["indicators"]
+IMFS = config["imfs"]
 LOSS_WEIGHT_CALCULATE = config["loss_weight_calculate"]
 ###
 #FIXED
@@ -461,9 +469,9 @@ X, y, features, dfs = get_data(CURRENCY_LST,
                                  WINDOW_SIZE,
                                  neutral_quantile = NEUTRAL_QUANTILE,
                                  log_price=True,
-                                 remove_trend=True,
-                                 include_indicators = False,
-                                 include_imfs = False
+                                 remove_trend=REMOVE_TREND,
+                                 include_indicators = INDICATORS,
+                                 include_imfs = IMFS
                                 )
 INPUT_FEATURE_SIZE = X.shape[-1]
 
