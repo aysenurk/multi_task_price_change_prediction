@@ -22,12 +22,11 @@ def get_data(currency_lst,
             #df.index = df.Date.apply(pd.Timestamp)
             #df.sort_values("Date", inplace=True)
             #df.set_index("Date", inplace=True)
-            if not include_indicators:
-                df.drop(["Date", "Open", "High", "Low"], axis=1, inplace=True)
+            df.drop(["Date"], axis=1, inplace=True)
             df.rename(str.lower, axis=1, inplace=True)
             
             if log_price:
-                df["close"] = df["close"].apply(np.log)
+                df[["close", "open", "high", "low"]] = df[["close", "open", "high", "low"]].apply(np.log, axis=1)
                    
             if n_classes == 3:
                 df['pct_diff'] = df['close'].pct_change()
@@ -54,9 +53,10 @@ def get_data(currency_lst,
             
             if include_indicators:
                 from ta import add_all_ta_features
-                df = add_all_ta_features(df, open="open", high="high", low="low", close="close", volume="volume", fillna=True)
+                indicators_df = add_all_ta_features(df, open="open", high="high", low="low", close="close", volume="volume", fillna=True)
+                df[indicators_df.columns] = indicators_df
             else:
-                df.drop("volume", axis=1, inplace=True)
+                df.drop(["volume", "open", "high", "low"], axis=1, inplace=True)
             
             if include_imfs:
                 from PyEMD import EEMD
@@ -64,7 +64,6 @@ def get_data(currency_lst,
                 imfs = eemd(df["close"].values)
                 imf_features = ["imf_"+str(i) for i in range(imfs.shape[0])]
                 df = pd.concat((df, pd.DataFrame(imfs.T, columns=imf_features, index=df.index)), axis=1)
-
 
             dfs[cur] = df
         
