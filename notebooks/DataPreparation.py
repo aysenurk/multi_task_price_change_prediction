@@ -1,6 +1,9 @@
 import pandas as pd
 import numpy as np
 
+import pandas as pd
+import numpy as np
+
 def get_data(currency_lst,
              n_classes,
              frequency, 
@@ -11,7 +14,8 @@ def get_data(currency_lst,
              log_price = True,
              remove_trend = True,
              include_indicators = True,
-             include_imfs = True):
+             include_imfs = True,
+             drop_open_high_low = True):
         
         X, y, dfs = {}, {}, {}     
         
@@ -42,11 +46,6 @@ def get_data(currency_lst,
             else:
                 df['diff'] = df['close'].diff()
                 change_dir = df['diff'].apply(lambda x: 0 if x <= 0 else 1)
-                
-            if remove_trend:
-                from statsmodels.tsa.seasonal import seasonal_decompose
-                components = seasonal_decompose(df["close"], model="additive")
-                df["close"] -= components.trend
             
             df.insert(loc=0, column="change_dir", value=change_dir)   
             df.dropna(inplace=True)       
@@ -64,6 +63,15 @@ def get_data(currency_lst,
                 imfs = eemd(df["close"].values)
                 imf_features = ["imf_"+str(i) for i in range(imfs.shape[0])]
                 df = pd.concat((df, pd.DataFrame(imfs.T, columns=imf_features, index=df.index)), axis=1)
+                
+            if remove_trend:
+                from statsmodels.tsa.seasonal import seasonal_decompose
+                components = seasonal_decompose(df["close"], model="additive")
+                df["close"] -= components.trend
+                df.dropna(inplace=True)
+                
+            if drop_open_high_low:
+                df.drop(["open", "high", "low"], axis=1, inplace=True)
 
             dfs[cur] = df
         
