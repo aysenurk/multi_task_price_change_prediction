@@ -8,13 +8,13 @@ def get_data(currency_lst,
              n_classes,
              frequency, 
              window_size,
-             neutral_quantile = 0.25,
+             neutral_quantile = 0.33,
              beg_date = pd.Timestamp(2013,1,1),
              end_date = pd.Timestamp.now(),
              log_price = True,
              remove_trend = True,
-             include_indicators = True,
-             include_imfs = True,
+             include_indicators = False,
+             include_imfs = False,
              drop_open_high_low = True):
         
         X, y, dfs = {}, {}, {}     
