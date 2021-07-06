@@ -22,7 +22,8 @@ def get_data(currency_lst,
             #df.index = df.Date.apply(pd.Timestamp)
             #df.sort_values("Date", inplace=True)
             #df.set_index("Date", inplace=True)
-            df.drop(["Date", "Open", "High", "Low"], axis=1, inplace=True)
+            if not include_indicators:
+                df.drop(["Date", "Open", "High", "Low"], axis=1, inplace=True)
             df.rename(str.lower, axis=1, inplace=True)
             
             if log_price:
