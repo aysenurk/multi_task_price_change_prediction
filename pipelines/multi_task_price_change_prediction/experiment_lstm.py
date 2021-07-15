@@ -20,6 +20,8 @@ parser.add_argument("-cl", "--currency-list", nargs="+", default=[])
 parser.add_argument("-lstm", "--lstm-list", nargs="+", default=[])
 parser.add_argument("-trend", default=bool)
 parser.add_argument("-imfs", default=bool)
+parser.add_argument("-ohlv", default=bool)
+parser.add_argument("-bidirectional", default=bool)
 parser.add_argument("-indicators", default=bool)
 parser.add_argument("-weight", default=bool)
 parser.add_argument("-classes", default=int)
@@ -30,6 +32,8 @@ currency_list = args.currency_list
 remove_trend = bool(int(args.trend))
 imfs = bool(int(args.imfs))
 indicators =  bool(int(args.indicators))
+ohlv = bool(int(args.ohlv))
+bidirectional = bool(int(args.bidirectional))
 loss_weight_calculate = bool(int(args.weight))
 lstm_hidden_sizes = [int(size) for size in args.lstm_list]
 
@@ -57,8 +61,8 @@ class TimeSeriesDataset(Dataset):
         self.test_size = int(len(self.x[0]) * test_percentage)
         self.train_size = len(self.x[0]) - self.val_size - self.test_size 
         
-        self.train_mean = [self.x[i][:self.train_size].mean() for i in range(self.n_currencies)]
-        self.train_std = [self.x[i][:self.train_size].std() for i in range(self.n_currencies)]
+        self.train_mean = [self.x[i][:self.train_size].mean(axis=0) for i in range(self.n_currencies)]
+        self.train_std = [self.x[i][:self.train_size].std(axis=0) for i in range(self.n_currencies)]
         
         
     def __len__(self):
@@ -91,6 +95,7 @@ class TimeSeriesDataset(Dataset):
             item[self.currencies[i] + "_label"]  = self.y[i][index+self.seq_len]
 
         return item
+    
 class CosineWarmupScheduler(torch.optim.lr_scheduler._LRScheduler):
     
     def __init__(self, optimizer, warmup, max_iters):
@@ -152,30 +157,31 @@ class LSTM_based_classification_model(pl.LightningModule):
                               batch_first=True, 
                               hidden_size = self.lstm_hidden_sizes[0], 
                               bidirectional = bidirectional)
-        self.batch_norm1 = nn.BatchNorm2d(num_features=self.lstm_hidden_sizes[0])
+        self.batch_norm1 = nn.BatchNorm2d(num_features=self.lstm_hidden_sizes[0] * 2 if bidirectional else self.lstm_hidden_sizes[0])
         
         if len(self.lstm_hidden_sizes) > 1:
-            self.lstm_2 = nn.LSTM(input_size = self.lstm_hidden_sizes[0], 
+            self.lstm_2 = nn.LSTM(input_size = self.lstm_hidden_sizes[0] *2 if self.bidirectional else self.lstm_hidden_sizes[0], 
                                   num_layers=1, 
                                   batch_first=True, 
-                                  hidden_size = self.lstm_hidden_sizes[1], 
+                                  hidden_size = self.lstm_hidden_sizes[1] , 
                                   bidirectional = bidirectional)
-            self.batch_norm2 = nn.BatchNorm2d(num_features=self.lstm_hidden_sizes[1])
+            self.batch_norm2 = nn.BatchNorm2d(num_features=self.lstm_hidden_sizes[1] *2 if self.bidirectional else self.lstm_hidden_sizes[1])
 
-            self.lstm_3 = nn.LSTM(input_size = self.lstm_hidden_sizes[1], 
+            self.lstm_3 = nn.LSTM(input_size = self.lstm_hidden_sizes[1] *2 if self.bidirectional else self.lstm_hidden_sizes[1], 
                                   num_layers=1, 
                                   batch_first=True, 
-                                  hidden_size = self.lstm_hidden_sizes[2], 
+                                  hidden_size = self.lstm_hidden_sizes[2] , 
                                   bidirectional = bidirectional)
-            self.batch_norm3 = nn.BatchNorm2d(num_features=self.lstm_hidden_sizes[2])
+            self.batch_norm3 = nn.BatchNorm2d(num_features=self.lstm_hidden_sizes[2] *2 if self.bidirectional else self.lstm_hidden_sizes[2])
         
         self.dropout = nn.Dropout(0.5)
+        n_feature = self.lstm_hidden_sizes[-1] *2 if bidirectional else self.lstm_hidden_sizes[-1]
         
-        self.linear1 =[nn.Linear(self.lstm_hidden_sizes[-1], int(self.lstm_hidden_sizes[-1]/2))] * self.num_tasks
+        self.linear1 =[nn.Linear(n_feature, int(n_feature/2))] * self.num_tasks
         self.linear1 = torch.nn.ModuleList(self.linear1)
         self.activation = nn.ReLU()
         
-        self.output_layers = [nn.Linear(int(self.lstm_hidden_sizes[-1]/2), self.num_classes)] * self.num_tasks
+        self.output_layers = [nn.Linear(int(n_feature/2), self.num_classes)] * self.num_tasks
         self.output_layers = torch.nn.ModuleList(self.output_layers)
         
         if self.weights != None:
@@ -331,28 +337,28 @@ def name_model(config):
     task = "multi_task_" + "_".join(config["currency_list"]) if len(config["currency_list"]) > 1 else "single_task_" + config["currency_list"][0]
     classification = "multi_classification" if config["n_classes"] > 2 else "binary_classification"
     lstm = "stack_lstm" if len(config["lstm_hidden_sizes"]) > 1 else "single_lstm"
-    trend_removed = "trend_removed" if config["remove_trend"] else ""
-    loss_weighted = "loss_weighted" if config["loss_weight_calculate"] else ""
+    #trend_removed = "trend_removed" if config["remove_trend"] else ""
+    #loss_weighted = "loss_weighted" if config["loss_weight_calculate"] else ""
 
-    return "_".join([task, lstm, loss_weighted, classification, trend_removed])
-
+    #return "_".join([task, lstm, loss_weighted, classification, trend_removed])
+    return "_".join([task, lstm, classification])
 
 CONFIG = {#fix for this project
           "window_size": 50, 
-          "dataset_percentages": [0.97, 0.007, 0.023],
+          "dataset_percentages": [0.965, 0.01, 0.025],
           "frenquency": "D", 
           "neutral_quantile": 0.33,
-          "batch_size": 16,
-          "bidirectional": False}
+          "batch_size": 64}
 
 config = CONFIG.copy()
 config.update({"n_classes": n_classes,
           "currency_list": currency_list,
           "remove_trend": remove_trend,
           "indicators": indicators,
-          "imfs": imfs
+          "imfs": imfs,
           "lstm_hidden_sizes": lstm_hidden_sizes,
-          "loss_weight_calculate": loss_weight_calculate})
+          "loss_weight_calculate": loss_weight_calculate,
+          "bidirectional": bidirectional})
 
 MODEL_NAME = name_model(config)
 
@@ -395,7 +401,7 @@ train_dataset, val_dataset, test_dataset = [TimeSeriesDataset(CURRENCY_LST,
 
 config["dataset_sizes"] = [len(train_dataset), len(val_dataset), len(test_dataset)]
 ####
-wandb.init(project="price_change_2",
+wandb.init(project="price_change_v3",
            config=config,
            name = MODEL_NAME)
 logger = WandbLogger()

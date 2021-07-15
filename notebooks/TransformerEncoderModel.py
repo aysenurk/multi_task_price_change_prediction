@@ -4,101 +4,13 @@ import math
 
 import torch
 from torch import nn
+from torch.nn import functional as F
 from torch.utils.data import DataLoader, Dataset
 
 import pytorch_lightning as pl
 
-from torch.nn import functional as F
-from pytorch_lightning.callbacks.early_stopping import EarlyStopping
+from TimeSeriesLearningUtils import TimeSeriesDataset, CosineWarmupScheduler
 
-from pytorch_lightning.loggers import WandbLogger
-from pytorch_lightning.loggers import TensorBoardLogger
-
-import wandb
-
-from DataPreparation import get_data
-
-from argparse import ArgumentParser
-
-parser = ArgumentParser()
-parser.add_argument("-cl", "--currency-list", nargs="+", default=[])
-parser.add_argument("-trend", default=bool)
-parser.add_argument("-indicators", default=bool)
-parser.add_argument("-imfs", default=bool)
-parser.add_argument("-ohlv", default=bool)
-parser.add_argument("-weight", default=bool)
-parser.add_argument("-classes", default=int)
-
-args = parser.parse_args()
-n_classes = int(args.classes)
-currency_list = args.currency_list
-remove_trend = bool(int(args.trend))
-imfs = bool(int(args.imfs))
-ohlv = bool(int(args.ohlv))
-indicators = bool(int(args.indicators))
-loss_weight_calculate = bool(int(args.weight))
-
-class TimeSeriesDataset(Dataset):
-    def __init__(self, 
-                 currency_list,
-                 x: np.ndarray, 
-                 y: np.ndarray,
-                 data_use_type,
-                 train_percentage,
-                 val_percentage,
-                 test_percentage,
-                 seq_len, 
-                 ):
-        self.currencies = currency_list
-        self.n_currencies = len(self.currencies)
-        self.x = torch.tensor(x[:self.n_currencies]).float()
-        self.y = torch.tensor(y[:self.n_currencies]).long()
-        self.seq_len = seq_len
-        self.data_use_type = data_use_type
-        
-        
-        #self.train_size = int(len(self.x[0]) * train_percentage)
-        self.val_size = int(len(self.x[0]) * val_percentage)
-        self.test_size = int(len(self.x[0]) * test_percentage)
-        self.train_size = len(self.x[0]) - self.val_size - self.test_size 
-        
-        self.train_mean = [self.x[i][:self.train_size].mean(axis=0) for i in range(self.n_currencies)]
-        self.train_std = [self.x[i][:self.train_size].std(axis=0) for i in range(self.n_currencies)]
-        
-#         self.train_min = [self.x[i][:self.train_size].min() for i in range(n_currencies)]
-#         self.train_max = [self.x[i][:self.train_size].max() for i in range(n_currencies)]
-        
-    def __len__(self):
-        
-        if self.data_use_type == "train":
-            return self.train_size - ( self.seq_len)
-
-        elif self.data_use_type == "val":
-            return self.val_size
-  
-        else:
-            return self.test_size
-        
-    
-    def __getitem__(self, index):
-        
-        item = dict()
-        
-        if self.data_use_type =="val":
-            index = self.train_size + index - self.seq_len
-            
-        elif self.data_use_type =="test":
-            index = self.train_size + self.val_size + index - self.seq_len
-        
-        for i in range(self.n_currencies):
-            window = self.x[i][index:index+self.seq_len]
-            window = (window -self.train_mean[i]) / self.train_std[i]
-            
-            item[self.currencies[i] + "_window"] = window
-            item[self.currencies[i] + "_label"]  = self.y[i][index+self.seq_len]
-
-        return item
-    
 def scaled_dot_product(q, k, v, mask=None):
     d_k = q.size()[-1]
     attn_logits = torch.matmul(q, k.transpose(-2, -1))
@@ -245,22 +157,6 @@ class PositionalEncoding(nn.Module):
         x = x + self.pe[:, :x.size(1)]
         return x
 
-class CosineWarmupScheduler(torch.optim.lr_scheduler._LRScheduler):
-    
-    def __init__(self, optimizer, warmup, max_iters):
-        self.warmup = warmup
-        self.max_num_iters = max_iters
-        super().__init__(optimizer)
-        
-    def get_lr(self):
-        lr_factor = self.get_lr_factor(epoch=self.last_epoch)
-        return [base_lr * lr_factor for base_lr in self.base_lrs]
-    
-    def get_lr_factor(self, epoch):
-        lr_factor = 0.5 * (1 + np.cos(np.pi * epoch / self.max_num_iters))
-        if epoch <= self.warmup:
-            lr_factor *= epoch * 1.0 / self.warmup
-        return lr_factor
 class TradePredictor(pl.LightningModule): 
     def __init__(self, 
                  train_dataset,
@@ -426,109 +322,3 @@ class TradePredictor(pl.LightningModule):
 
     def test_dataloader(self):
         return self.test_dl
-def name_model(config):
-    task = "multi_task_" + "_".join(config["currency_list"]) if len(config["currency_list"]) > 1 else "single_task_" + config["currency_list"][0]
-    classification = "multi_classification" if config["n_classes"] > 2 else "binary_classification"
-    #trend_removed = "trend_removed" if config["remove_trend"] else ""
-    #loss_weighted = "loss_weighted" if config["loss_weight_calculate"] else ""
-    
-    #return "_".join([task, "multi_head_attention", loss_weighted, classification, trend_removed])
-    return "_".join([task, "multi_head_attention", classification])
-
-CONFIG = {#fix for this project
-          "window_size": 50, 
-          "dataset_percentages": [0.965, 0.01, 0.025],
-          "frenquency": "D", 
-          "neutral_quantile": 0.33,
-          "batch_size": 64,}
-
-config = CONFIG.copy()
-config.update({"n_classes": n_classes,
-          "currency_list": currency_list,
-          "remove_trend": remove_trend,
-          "indicators": indicators,
-          "imfs": imfs,
-               "ohlv": ohlv,
-          "loss_weight_calculate": loss_weight_calculate})
-
-MODEL_NAME = name_model(config)
-####
-CURRENCY_LST = config["currency_list"]
-N_CLASSES = config["n_classes"]
-REMOVE_TREND =config["remove_trend"]
-INDICATORS = config["indicators"]
-IMFS = config["imfs"]
-OHLV= config["ohlv"]
-LOSS_WEIGHT_CALCULATE = config["loss_weight_calculate"]
-###
-#FIXED
-TRAIN_PERCENTAGE, VAL_PERCENTAGE, TEST_PERCENTAGE = config["dataset_percentages"] 
-WINDOW_SIZE = config["window_size"]
-FREQUENCY = config["frenquency"]
-NEUTRAL_QUANTILE = config["neutral_quantile"] if N_CLASSES > 2 else 0 
-BATCH_SIZE= config["batch_size"]
-
-X, y, features, dfs = get_data(CURRENCY_LST,
-                                N_CLASSES,
-                                 FREQUENCY, 
-                                 WINDOW_SIZE,
-                                 neutral_quantile = NEUTRAL_QUANTILE,
-                                 log_price=True,
-                                 remove_trend=REMOVE_TREND,
-                                 include_indicators = INDICATORS,
-                                 include_imfs = IMFS, 
-                               open_high_low_volume = OHLV
-                               
-                                )
-INPUT_FEATURE_SIZE = X.shape[-1]
-
-train_dataset, val_dataset, test_dataset = [TimeSeriesDataset(CURRENCY_LST, 
-                                                              X, 
-                                                              y, 
-                                                              dtype, 
-                                                              TRAIN_PERCENTAGE, 
-                                                              VAL_PERCENTAGE, 
-                                                              TEST_PERCENTAGE, 
-                                                              WINDOW_SIZE) for dtype in ['train', 'val', 'test']]
-config["dataset_sizes"] = [len(train_dataset), len(val_dataset), len(test_dataset)]
-
-wandb.init(project="price_change_v3",
-           config=config,
-           name = MODEL_NAME)
-logger = WandbLogger()
-
-model = TradePredictor( 
-                    input_dim=INPUT_FEATURE_SIZE,
-                    model_dim=64,
-                    num_heads=8,
-                    num_classes=N_CLASSES,
-                    num_layers=4,
-                    dropout=0.5,
-                    lr=5e-4,
-                    train_dataset = train_dataset,
-                    val_dataset = val_dataset,
-                    test_dataset = test_dataset,
-                    calculate_loss_weights = LOSS_WEIGHT_CALCULATE,
-                    currencies = CURRENCY_LST,
-                    window_size = WINDOW_SIZE,
-                    batch_size=BATCH_SIZE,)
-
-early_stop_callback = EarlyStopping(
-   monitor='val_loss',
-   min_delta=0.003,
-   patience=25,
-   verbose=True,
-   mode='min'
-)
-trainer = pl.Trainer(#default_root_dir=root_dir, 
-                     #checkpoint_callback=ModelCheckpoint(save_weights_only=True, mode="max", monitor="val_acc"),
-                     gpus=-1 , 
-                     max_epochs=80,
-                     gradient_clip_val=2,
-                     progress_bar_refresh_rate=1, 
-                     logger = logger, 
-                     callbacks=[early_stop_callback])
-
-trainer.fit(model)
-trainer.test()
-wandb.finish()
