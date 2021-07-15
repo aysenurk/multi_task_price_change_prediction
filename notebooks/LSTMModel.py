@@ -8,6 +8,8 @@ from torch.utils.data import DataLoader, Dataset
 
 import pytorch_lightning as pl
 
+from TimeSeriesLearningUtils import TimeSeriesDataset, CosineWarmupScheduler
+
 class LSTM_based_classification_model(pl.LightningModule):
     def __init__(self,
                  train_dataset,
@@ -212,8 +214,8 @@ class LSTM_based_classification_model(pl.LightningModule):
 #                                                     gamma=self.scheduler_gamma)
         
         self.lr_scheduler = CosineWarmupScheduler(optimizer, 
-                                                  warmup=50, 
-                                                  max_iters=150* self.train_dl.__len__())
+                                                  warmup=self.train_dl.__len__() * 10, 
+                                                  max_iters = 80 * self.train_dl.__len__())
         return [optimizer]#, [{"scheduler": scheduler}]
     
     def optimizer_step(self, *args, **kwargs):

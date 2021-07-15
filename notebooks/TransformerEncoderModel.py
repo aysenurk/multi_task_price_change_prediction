@@ -273,7 +273,7 @@ class TradePredictor(pl.LightningModule):
         
         # We don't return the lr scheduler because we need to apply it per iteration, not per epoch
         self.lr_scheduler = CosineWarmupScheduler(optimizer, 
-                                                  warmup=50, 
+                                                  warmup = self.train_dl.__len__() * 10, 
                                                   max_iters = 80* self.train_dl.__len__())
         return optimizer
     
