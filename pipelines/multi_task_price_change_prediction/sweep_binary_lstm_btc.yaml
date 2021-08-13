@@ -1,0 +1,102 @@
+program: train_lstm.py
+method: bayes
+metric:
+  name: val_loss
+  goal: minimize
+parameters:
+  n_classes: 
+    distribution: constant
+    value: 2
+  currency:
+    distribution: constant
+    value: 0 
+  window_size: 
+    distribution: int_uniform
+    min: 5
+    max: 150
+  
+  val_percentage: 
+    distribution: uniform
+    min: 0.0035
+    max: 0.023
+  
+  test_percentage:
+    distribution: constant
+    value: 0.023
+
+  frenquency: 
+    distribution: constant
+    value: D
+
+  neutral_quantile:
+    distribution: constant
+    value: 0.33
+  
+  batch_size:
+    distribution: log_uniform
+    min: 2
+    max: 9
+
+  bidirectional:
+    distribution: categorical
+    values:
+      - 0
+      - 1
+  remove_trend:
+    distribution: categorical
+    values:
+      - 0
+      - 1
+  lstm_hidden_size:
+    distribution: log_uniform
+    min: 4
+    max: 8
+  
+  stack_lstm:
+    distribution: categorical
+    values:
+      - 0
+      - 1
+  loss_weight_calculate:
+    distribution: categorical
+    values:
+      - 0
+      - 1
+  indicators:
+    distribution: categorical
+    values:
+      - 0
+      - 1
+  imfs:
+    distribution: constant
+    value: 0
+    
+  ohlv:
+    distribution: categorical
+    values:
+      - 0
+      - 1
+  last_layer_fsz:
+    distribution: log_uniform
+    min: 2
+    max: 8
+  
+  dropout_ratio: 
+    distribution: uniform
+    min: 0
+    max: 0.8
+  
+  warmup_epoch:
+    distribution: int_uniform
+    min: 1
+    max: 40
+
+  learning_rate:
+    distribution: uniform
+    min: 1e-5
+    max: 1e-1
+   
+  weight_decay:
+    distribution: uniform
+    min: 0
+    max: 2e-1

@@ -1,9 +1,6 @@
 import pandas as pd
 import numpy as np
 
-import pandas as pd
-import numpy as np
-
 def get_data(currency_lst,
              n_classes,
              frequency, 
@@ -20,7 +17,7 @@ def get_data(currency_lst,
         X, y, dfs = {}, {}, {}     
         
         for cur in currency_lst:
-            df = pd.read_csv(f"../data/0_raw/Binance/{str.lower(cur)}_usdt_1d.csv", index_col=0)
+            df = pd.read_csv(f"../../data/0_raw/Binance/{str.lower(cur)}_usdt_1d.csv", index_col=0)
             df.index = pd.to_datetime(df.index, unit='s')
             df.sort_index(inplace=True)
             #df.index = df.Date.apply(pd.Timestamp)
