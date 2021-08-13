@@ -12,7 +12,7 @@ from pytorch_lightning.loggers import WandbLogger
 from pytorch_lightning.loggers import TensorBoardLogger
 import wandb
 from pytorch_lightning.callbacks import ModelCheckpoint
-from DataPreparation import get_data
+from TimeSeriesLearningUtils import get_data
 from argparse import ArgumentParser
 
 parser = ArgumentParser()

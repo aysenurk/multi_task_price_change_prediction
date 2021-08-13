@@ -16,7 +16,7 @@ from pytorch_lightning.loggers import TensorBoardLogger
 
 import wandb
 
-from DataPreparation import get_data
+from TimeSeriesLearningUtils import get_data
 
 from argparse import ArgumentParser
 

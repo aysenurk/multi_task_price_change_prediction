@@ -26,11 +26,9 @@ class TimeSeriesDataset(Dataset):
         self.seq_len = seq_len
         self.data_use_type = data_use_type
         
-        
-        #self.train_size = int(len(self.x[0]) * train_percentage)
+        self.train_size = int(len(self.x[0]) * train_percentage)
         self.val_size = int(len(self.x[0]) * val_percentage)
-        self.test_size = int(len(self.x[0]) * test_percentage)
-        self.train_size = len(self.x[0]) - self.val_size - self.test_size 
+        self.test_size = len(self.x[0]) - self.train_size - self.val_size
         
         self.train_mean = [self.x[i][:self.train_size].mean() for i in range(self.n_currencies)]
         self.train_std = [self.x[i][:self.train_size].std() for i in range(self.n_currencies)]
@@ -85,3 +83,84 @@ class CosineWarmupScheduler(torch.optim.lr_scheduler._LRScheduler):
         if epoch <= self.warmup:
             lr_factor *= epoch * 1.0 / self.warmup
         return lr_factor
+
+def get_data(currency_lst,
+             data_frequency,
+             pred_frequency, 
+             n_classes,
+             window_size,
+             neutral_quantile = 0.33,
+             beg_date = pd.Timestamp(2013,1,1),
+             end_date = pd.Timestamp.now(),
+             log_price = True,
+             remove_trend = False,
+             ma_period = 0,
+             include_indicators = False,
+             include_imfs = False,
+             open_high_low_volume = False):
+        
+        X, y, dfs = {}, {}, {}     
+        
+        for cur in currency_lst:
+            df = pd.read_csv(f"../data/0_raw/Binance/{str.lower(cur)}_usdt_{data_frequency}.csv", index_col=0)
+            df.index = pd.to_datetime(df.index, unit='s')
+            df.sort_index(inplace=True)
+            df.drop(["Date"], axis=1, inplace=True)
+            df.rename(str.lower, axis=1, inplace=True) 
+            
+            if include_indicators:
+                from ta import add_all_ta_features
+                indicators_df = add_all_ta_features(df, open="open", high="high", low="low", close="close", volume="volume", fillna=True)
+                df[indicators_df.columns] = indicators_df
+            
+            if include_imfs:
+                from PyEMD import EEMD
+                eemd = EEMD()
+                imfs = eemd(df["close"].values)
+                imf_features = ["imf_"+str(i) for i in range(imfs.shape[0])]
+                df = pd.concat((df, pd.DataFrame(imfs.T, columns=imf_features, index=df.index)), axis=1)
+            
+            if log_price:
+                df[["close", "open", "high", "low"]] = df[["close", "open", "high", "low"]].apply(np.log, axis=1)
+                   
+            if n_classes == 3:
+                df['pct_diff'] = df['close'].pct_change()
+                neutral_quantiles = df['pct_diff'].abs().quantile(neutral_quantile)
+                
+                conditions = [(df['pct_diff'] < 0) & (df['pct_diff'].abs() > neutral_quantiles),
+                              (df['pct_diff'] > 0) & (df['pct_diff'].abs() > neutral_quantiles)]
+
+                classes = [0,1] # 2 is the default class if none of conditions is met, i.e. price change in the neutral range
+            
+                change_dir = np.select(conditions, classes, default=2)
+            
+            else:
+                df['diff'] = df['close'].diff()
+                change_dir = df['diff'].apply(lambda x: 0 if x <= 0 else 1)
+            
+            df.insert(loc=0, column="change_dir", value=change_dir)   
+            df.dropna(inplace=True)  
+            
+            if remove_trend:
+                from statsmodels.tsa.seasonal import seasonal_decompose
+                components = seasonal_decompose(df["close"], model="additive", period = ma_period, two_sided=False)
+                df["close"] -= components.trend
+                df.dropna(inplace=True)
+                
+            if not open_high_low_volume:
+                df.drop(["open", "high", "low", "volume"], axis=1, inplace=True)
+
+            dfs[cur] = df
+        
+        min_dates = [df.index.min() for cur, df in dfs.items()]
+        max_dates = [df.index.max() for cur, df in dfs.items()]
+        beg_date = max([max(min_dates), beg_date])
+        end_date = min([min(max_dates), end_date])
+        common_range = pd.date_range(beg_date, end_date, freq=pred_frequency)
+        
+        diff_col = 'pct_diff' if n_classes == 3 else 'diff'
+        X = np.array([dfs[cur].loc[common_range].drop(["change_dir", diff_col], axis=1).values for cur in currency_lst])
+        y = np.array([dfs[cur].loc[common_range, "change_dir"].values for cur in currency_lst])
+        features = df.columns.tolist()
+        
+        return X, y, features, dfs
