@@ -172,8 +172,8 @@ def get_data(currency_lst,
         
         diff_col = 'pct_diff' if n_classes == 3 else 'diff'
         for cur in currency_lst:
-        X = np.array([dfs[cur].loc[common_range].drop(["change_dir", diff_col], axis=1).values for cur in currency_lst])
-        y = np.array([dfs[cur].loc[common_range, "change_dir"].values for cur in currency_lst])
+            X = np.array([dfs[cur].loc[common_range].drop(["change_dir", diff_col], axis=1).values for cur in currency_lst])
+            y = np.array([dfs[cur].loc[common_range, "change_dir"].values for cur in currency_lst])
         features = df.columns.tolist()
         
         return X, y, features, dfs
