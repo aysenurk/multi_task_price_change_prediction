@@ -8,7 +8,9 @@ from torch.utils.data import DataLoader, Dataset
 
 import pytorch_lightning as pl
 
-from TimeSeriesLearningUtils import TimeSeriesDataset, CosineWarmupScheduler
+from TimeSeriesLearningUtils import CosineWarmupScheduler
+
+MAX_EPOCHS = 80
 
 class LSTM_based_classification_model(pl.LightningModule):
     def __init__(self,
@@ -23,9 +25,13 @@ class LSTM_based_classification_model(pl.LightningModule):
                  batch_size,
                  lstm_hidden_sizes,
                  bidirectional,
+                 last_layer_fsz,
+                 dropout_ratio = 0.5,
+                 warmup_epoch = 5,
                  learning_rate = 1e-3,
-                 scheduler_step = 10,
-                 scheduler_gamma = 0.1,
+                 weight_decay = 1e-2,
+                #  scheduler_step = 10,
+                #  scheduler_gamma = 0.1,
                  ):
         
         super().__init__()
@@ -38,6 +44,9 @@ class LSTM_based_classification_model(pl.LightningModule):
         
         self.lstm_hidden_sizes = lstm_hidden_sizes
         self.bidirectional = bidirectional 
+        
+        self.dropout_ratio = dropout_ratio
+        self.last_layer_fsz = last_layer_fsz
         
         if calculate_loss_weights:
             loss_weights = []
@@ -71,15 +80,15 @@ class LSTM_based_classification_model(pl.LightningModule):
                                   bidirectional = bidirectional)
             self.batch_norm3 = nn.BatchNorm2d(num_features=self.lstm_hidden_sizes[2])
         
-        self.dropout = nn.Dropout(0.5)
+        self.dropout = nn.Dropout(self.dropout_ratio)
         
         n_feature = self.lstm_hidden_sizes[-1] *2 if bidirectional else self.lstm_hidden_sizes[-1]
         
-        self.linear1 =[nn.Linear(n_feature, int(n_feature/2))] * self.num_tasks
+        self.linear1 =[nn.Linear(n_feature, self.last_layer_fsz)] * self.num_tasks
         self.linear1 = torch.nn.ModuleList(self.linear1)
         self.activation = nn.ReLU()
         
-        self.output_layers = [nn.Linear(int(n_feature/2), self.num_classes)] * self.num_tasks
+        self.output_layers = [nn.Linear(self.last_layer_fsz, self.num_classes)] * self.num_tasks
         self.output_layers = torch.nn.ModuleList(self.output_layers)
         
         if self.weights != None:
@@ -97,8 +106,10 @@ class LSTM_based_classification_model(pl.LightningModule):
         self.test_dl = DataLoader(test_dataset, batch_size=self.batch_size)
         
         self.learning_rate = learning_rate
-        self.scheduler_step = scheduler_step
-        self.scheduler_gamma = scheduler_gamma
+        self.warmup_epoch = warmup_epoch
+        self.weight_decay = weight_decay
+        # self.scheduler_step = scheduler_step
+        # self.scheduler_gamma = scheduler_gamma
         
     def forward(self, x, i):
 
@@ -141,7 +152,6 @@ class LSTM_based_classification_model(pl.LightningModule):
         output = self.output_layers[i](x)
     
         return output
-    
     
     def training_step(self, batch, batch_nb):
         
@@ -192,8 +202,6 @@ class LSTM_based_classification_model(pl.LightningModule):
             x, y = batch[ self.currencies[i] + "_window"], batch[self.currencies[i] + "_label"]
 
             output = self(x, i)
-#             print(y, torch.max(output, dim=1)[1])
-#             print(F.softmax(output)) # mantıken fark etmiyor
             loss += self.cross_entropy_loss[i](output, y)
             
             acc = self.accuracy_score(torch.max(output, dim=1)[1], y)
@@ -204,18 +212,20 @@ class LSTM_based_classification_model(pl.LightningModule):
         
         loss = loss / torch.tensor(self.num_tasks)
         self.log('test_loss', loss, on_epoch=True, reduce_fx=torch.mean)
-
-        
+       
     def configure_optimizers(self):
         
-        optimizer = torch.optim.AdamW(self.parameters(), lr= self.learning_rate)#AdamW does weight decay
+        optimizer = torch.optim.AdamW(self.parameters(), 
+                                      lr= self.learning_rate, 
+                                      weight_decay=self.weight_decay)
+
 #         scheduler = torch.optim.lr_scheduler.StepLR(optimizer, 
 #                                                     step_size=self.scheduler_step, 
 #                                                     gamma=self.scheduler_gamma)
         
         self.lr_scheduler = CosineWarmupScheduler(optimizer, 
-                                                  warmup=self.train_dl.__len__() * 10, 
-                                                  max_iters = 80 * self.train_dl.__len__())
+                                                  warmup = self.train_dl.__len__() * self.warmup_epoch, 
+                                                  max_iters = MAX_EPOCHS * self.train_dl.__len__())
         return [optimizer]#, [{"scheduler": scheduler}]
     
     def optimizer_step(self, *args, **kwargs):
