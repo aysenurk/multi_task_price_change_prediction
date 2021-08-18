@@ -85,7 +85,7 @@ class CosineWarmupScheduler(torch.optim.lr_scheduler._LRScheduler):
             lr_factor *= epoch * 1.0 / self.warmup
         return lr_factor
 
-def get_data(currency_lst,
+def get_data(currency_list,
              data_frequency,
              pred_frequency, 
              n_classes,
@@ -98,12 +98,13 @@ def get_data(currency_lst,
              ma_period = 0,
              include_indicators = False,
              include_imfs = False,
-             open_high_low_volume = False,
-             drop_missing = True):
- 
+             ohlv = False,
+             drop_missing = True,
+              **kwargs):
+
         X, y, dfs = {}, {}, {}     
         
-        for cur in currency_lst:
+        for cur in currency_list:
             df = pd.read_csv(f"../data/0_raw/Binance/{str.lower(cur)}_usdt_{data_frequency}.csv", header=None,index_col=0)
             try: #for the previous raw data format in the project
                 df.index = pd.to_datetime(df.index, unit='s')
@@ -153,7 +154,7 @@ def get_data(currency_lst,
                 df["close"] -= components.trend
                 df.dropna(inplace=True)
                 
-            if not open_high_low_volume:
+            if not ohlv: #keeping open, high, low, and volume
                 df.drop(["open", "high", "low", "volume"], axis=1, inplace=True)
 
             dfs[cur] = df
@@ -164,17 +165,17 @@ def get_data(currency_lst,
         end_date = min([min(max_dates), end_date])
         common_range = pd.date_range(beg_date, end_date, freq=pred_frequency)
         
-        if drop_missing:
-            #the following time steps are missing in 6h datasets
-            missing = ['2018-02-08 06:00:00', '2018-02-08 12:00:00', '2018-02-08 18:00:00', '2018-02-09 00:00:00', '2018-06-26 06:00:00', '2019-05-15 06:00:00']
-            str_to_timestamp = lambda str_timestamp: datetime.strptime(str_timestamp, "%Y-%m-%d %H:%M:%S") 
-            missing = list(map(str_to_timestamp, missing))
-            common_range = common_range.drop(missing)
+        missing = set()
+        common_set = set(common_range)
+        for cur, df in dfs.items():
+            missing_steps = common_set.difference(df.index)
+            missing |= missing_steps
+        common_range = common_range.drop(missing)
         
         diff_col = 'pct_diff' if n_classes == 3 else 'diff'
 
-        X = np.array([dfs[cur].loc[common_range].drop(["change_dir", diff_col], axis=1).values for cur in currency_lst])
-        y = np.array([dfs[cur].loc[common_range, "change_dir"].values for cur in currency_lst])
+        X = np.array([dfs[cur].loc[common_range].drop(["change_dir", diff_col], axis=1).values for cur in currency_list])
+        y = np.array([dfs[cur].loc[common_range, "change_dir"].values for cur in currency_list])
         features = df.columns.tolist()
         
         return X, y, features, dfs
