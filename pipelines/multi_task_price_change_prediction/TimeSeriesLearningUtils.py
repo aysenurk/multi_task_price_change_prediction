@@ -84,3 +84,97 @@ class CosineWarmupScheduler(torch.optim.lr_scheduler._LRScheduler):
         if epoch <= self.warmup:
             lr_factor *= epoch * 1.0 / self.warmup
         return lr_factor
+    
+def get_data(currency_lst,
+             data_frequency,
+             pred_frequency, 
+             n_classes,
+             window_size,
+             neutral_quantile = 0.33,
+             beg_date = pd.Timestamp(2013,1,1),
+             end_date = pd.Timestamp.now(),
+             log_price = True,
+             remove_trend = False,
+             ma_period = 0,
+             include_indicators = False,
+             include_imfs = False,
+             open_high_low_volume = False,
+             drop_missing = True):
+ 
+        X, y, dfs = {}, {}, {}     
+        
+        for cur in currency_lst:
+            df = pd.read_csv(f"../data/0_raw/Binance/{str.lower(cur)}_usdt_{data_frequency}.csv", header=None,index_col=0)
+            try: #for the previous raw data format in the project
+                df.index = pd.to_datetime(df.index, unit='s')
+                df.drop(["Date"], axis=1, inplace=True)
+                df.rename(str.lower, axis=1, inplace=True) 
+            except: #for the current raw data format in the project
+                df.index = pd.to_datetime(df.index/1000, unit='s')
+                df.sort_index(inplace=True)
+                df.columns = ["open","high","low","close","volume"]
+            
+            if include_indicators:
+                from ta import add_all_ta_features
+                indicators_df = add_all_ta_features(df, open="open", high="high", low="low", close="close", volume="volume", fillna=True)
+                df[indicators_df.columns] = indicators_df
+            
+            if include_imfs:
+                from PyEMD import EEMD
+                eemd = EEMD(parallel=True, processes=2)
+                imfs = eemd(df["close"].values, max_imf=7)
+                imf_features = ["imf_"+str(i) for i in range(imfs.shape[0])]
+                df = pd.concat((df, pd.DataFrame(imfs.T, columns=imf_features, index=df.index)), axis=1)
+            
+            if log_price:
+                df[["close", "open", "high", "low"]] = df[["close", "open", "high", "low"]].apply(np.log, axis=1)
+                   
+            if n_classes == 3:
+                df['pct_diff'] = df['close'].pct_change()
+                neutral_quantiles = df['pct_diff'].abs().quantile(neutral_quantile)
+                
+                conditions = [(df['pct_diff'] < 0) & (df['pct_diff'].abs() > neutral_quantiles),
+                              (df['pct_diff'] > 0) & (df['pct_diff'].abs() > neutral_quantiles)]
+
+                classes = [0,1] # 2 is the default class if none of conditions is met, i.e. price change in the neutral range
+            
+                change_dir = np.select(conditions, classes, default=2)
+            
+            else:
+                df['diff'] = df['close'].diff()
+                change_dir = df['diff'].apply(lambda x: 0 if x <= 0 else 1)
+            
+            df.insert(loc=0, column="change_dir", value=change_dir)   
+            df.dropna(inplace=True)  
+            
+            if remove_trend:
+                from statsmodels.tsa.seasonal import seasonal_decompose
+                components = seasonal_decompose(df["close"], model="additive", period = ma_period, two_sided=False)
+                df["close"] -= components.trend
+                df.dropna(inplace=True)
+                
+            if not open_high_low_volume:
+                df.drop(["open", "high", "low", "volume"], axis=1, inplace=True)
+
+            dfs[cur] = df
+        
+        min_dates = [df.index.min() for cur, df in dfs.items()]
+        max_dates = [df.index.max() for cur, df in dfs.items()]
+        beg_date = max([max(min_dates), beg_date])
+        end_date = min([min(max_dates), end_date])
+        common_range = pd.date_range(beg_date, end_date, freq=pred_frequency)
+        
+        if drop_missing:
+            #the following time steps are missing in 6h datasets
+            missing = ['2018-02-08 06:00:00', '2018-02-08 12:00:00', '2018-02-08 18:00:00', '2018-02-09 00:00:00', '2018-06-26 06:00:00', '2019-05-15 06:00:00']
+            str_to_timestamp = lambda str_timestamp: datetime.strptime(str_timestamp, "%Y-%m-%d %H:%M:%S") 
+            missing = list(map(str_to_timestamp, missing))
+            common_range = common_range.drop(missing)
+        
+        diff_col = 'pct_diff' if n_classes == 3 else 'diff'
+
+        X = np.array([dfs[cur].loc[common_range].drop(["change_dir", diff_col], axis=1).values for cur in currency_lst])
+        y = np.array([dfs[cur].loc[common_range, "change_dir"].values for cur in currency_lst])
+        features = df.columns.tolist()
+        
+        return X, y, features, dfs

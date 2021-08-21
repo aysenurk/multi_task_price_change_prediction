@@ -63,22 +63,22 @@ class LSTM_based_classification_model(pl.LightningModule):
                               batch_first=True, 
                               hidden_size = self.lstm_hidden_sizes[0], 
                               bidirectional = bidirectional)
-        self.batch_norm1 = nn.BatchNorm2d(num_features=self.lstm_hidden_sizes[0])
+        self.batch_norm1 = nn.BatchNorm2d(num_features=self.lstm_hidden_sizes[0]*2 if bidirectional else self.lstm_hidden_sizes[0])
         
         if len(self.lstm_hidden_sizes) > 1:
-            self.lstm_2 = nn.LSTM(input_size = self.lstm_hidden_sizes[0], 
+            self.lstm_2 = nn.LSTM(input_size = self.lstm_hidden_sizes[0] *2 if bidirectional else self.lstm_hidden_sizes[0], 
                                   num_layers=1, 
                                   batch_first=True, 
                                   hidden_size = self.lstm_hidden_sizes[1], 
                                   bidirectional = bidirectional)
-            self.batch_norm2 = nn.BatchNorm2d(num_features=self.lstm_hidden_sizes[1])
+            self.batch_norm2 = nn.BatchNorm2d(num_features=self.lstm_hidden_sizes[1]*2 if bidirectional else self.lstm_hidden_sizes[1])
 
-            self.lstm_3 = nn.LSTM(input_size = self.lstm_hidden_sizes[1], 
+            self.lstm_3 = nn.LSTM(input_size = self.lstm_hidden_sizes[1]*2 if bidirectional else self.lstm_hidden_sizes[1], 
                                   num_layers=1, 
                                   batch_first=True, 
                                   hidden_size = self.lstm_hidden_sizes[2], 
                                   bidirectional = bidirectional)
-            self.batch_norm3 = nn.BatchNorm2d(num_features=self.lstm_hidden_sizes[2])
+            self.batch_norm3 = nn.BatchNorm2d(num_features=self.lstm_hidden_sizes[2]*2 if bidirectional else self.lstm_hidden_sizes[2])
         
         self.dropout = nn.Dropout(self.dropout_ratio)
         

@@ -7,8 +7,8 @@ from pytorch_lightning.loggers import WandbLogger
 from pytorch_lightning.loggers import TensorBoardLogger
 import wandb
 
-from DataPreparation import get_data
-from TimeSeriesLearningUtils import TimeSeriesDataset
+# from DataPreparation import get_data
+from TimeSeriesLearningUtils import TimeSeriesDataset, get_data
 from LSTMModel import LSTM_based_classification_model
 
 MAX_EPOCHS = 80
@@ -16,15 +16,20 @@ WANDBPROJECT = "deneme"
 
 def name_model(config):
     name =[]
-    if len(config["currency_list"])  > 1:
-        name.append("multi_task_" + "_".join(config["currency_list"]))
+    if config["currency"] >= 0:
+        name.append(config[['BTC', 'ETH', 'LTC'][config["currency"]]])
     else:
-        name.append(config["currency_list"][0])
+        name.append("multi_task_" + "_".join(['BTC', 'ETH', 'LTC']))                   
+#      if config["currency"] >= 0 else ['BTC', 'ETH', 'LTC']
+#     if len(config["currency_list"])  > 1:
+#         name.append("multi_task_" + "_".join(config["currency_list"]))
+#     else:
+#         name.append(config["currency_list"][0])
         
     if config["indicators"] or config["imfs"] or config ["ohlv"]:
         name.append("multi_variate")
     
-    lstm = "stack_lstm" if len(config["lstm_hidden_sizes"]) > 1 else "lstm"
+    lstm = "stack_lstm" if len(config["lstm_hidden_size"]) > 1 else "lstm"
     name.append(lstm)
     
     classification = "multi_clf" if config["n_classes"] > 2 else "binary_clf"
@@ -33,14 +38,17 @@ def name_model(config):
     return "_".join(name)
     
 config = {"window_size": 100, 
-          "val_percentage": 0.007,
+#           "val_percentage": 0.007,
+          "val_percentage": 0.023,
           "test_percentage": 0.023,
-          "frenquency": "D", 
+          "data_frequency": "6h", 
+          "pred_frequency": "6h", 
+          "ma_period": 10,
           "neutral_quantile": 0.33,
-          "batch_size": 512,
-          "bidirectional": False, 
+          "batch_size": 128,
+          "bidirectional": True, 
           "n_classes": 2,
-          "currency": 0,#['BTC'], #['BTC', 'ETH', 'LTC'],
+          "currency": -1,#['BTC'], #['BTC', 'ETH', 'LTC'],
           "remove_trend": True,
           "lstm_hidden_size": 128,
           "stack_lstm": True,
@@ -57,6 +65,7 @@ config = {"window_size": 100,
 MODEL_NAME = name_model(config)
 wandb.init(project=WANDBPROJECT,
            config=config,
+           entity='multi_task_price_prediction',
            name = MODEL_NAME)
 
 config = wandb.config
@@ -69,6 +78,9 @@ REMOVE_TREND =config["remove_trend"]
 LOSS_WEIGHT_CALCULATE = config["loss_weight_calculate"]
 VAL_PERCENTAGE =  config["val_percentage"]
 TEST_PERCENTAGE = config["test_percentage"] 
+DATA_FREQUENCY = config["data_frequency"]
+PRED_FREQUENCY = config["pred_frequency"]
+MA_PERIOD = config["ma_period"]
 WINDOW_SIZE = config["window_size"]
 FREQUENCY = config["frenquency"]
 NEUTRAL_QUANTILE = config["neutral_quantile"] if N_CLASSES > 2 else 0 
@@ -82,17 +94,30 @@ WARMUP_EPOCH = config["warmup_epoch"]
 LEARNING_RATE = config["learning_rate"]
 WEIGHT_DECAY = config["weight_decay"]
 #####
-X, y, _, _ = get_data(CURRENCY_LST,
-                            N_CLASSES,
-                             FREQUENCY, 
-                             WINDOW_SIZE,
-                             neutral_quantile = NEUTRAL_QUANTILE,
-                             log_price=True,
-                             remove_trend=REMOVE_TREND,
-                             include_indicators = INDICATORS,
-                             include_imfs = IMFS, 
-                             open_high_low_volume = OHLV
-                            )
+# X, y, _, _ = get_data(CURRENCY_LST,
+#                             N_CLASSES,
+#                              FREQUENCY, 
+#                              WINDOW_SIZE,
+#                              neutral_quantile = NEUTRAL_QUANTILE,
+#                              log_price=True,
+#                              remove_trend=REMOVE_TREND,
+#                              include_indicators = INDICATORS,
+#                              include_imfs = IMFS, 
+#                              open_high_low_volume = OHLV)
+X, y, features, dfs = get_data(currency_lst = CURRENCY_LST,
+                               data_frequency =DATA_FREQUENCY,
+                               pred_frequency = PRED_FREQUENCY,
+                               n_classes = N_CLASSES,
+                               window_size=WINDOW_SIZE,
+                               neutral_quantile = NEUTRAL_QUANTILE,
+                               log_price=True,
+                               remove_trend=REMOVE_TREND,
+                               ma_period=MA_PERIOD,
+                               include_indicators = INDICATORS,
+                               include_imfs = IMFS, 
+                               open_high_low_volume = OHLV, 
+                               drop_missing=True)
+                            
 INPUT_FEATURE_SIZE = X.shape[-1]
 
 train_dataset, val_dataset, test_dataset = [TimeSeriesDataset(CURRENCY_LST, 
