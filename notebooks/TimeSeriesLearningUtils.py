@@ -85,7 +85,7 @@ class CosineWarmupScheduler(torch.optim.lr_scheduler._LRScheduler):
             lr_factor *= epoch * 1.0 / self.warmup
         return lr_factor
 
-def get_data(currency_list,
+def get_data2(currency_list,
              data_frequency,
              pred_frequency, 
              n_classes,
@@ -177,5 +177,102 @@ def get_data(currency_list,
         X = np.array([dfs[cur].loc[common_range].drop(["change_dir", diff_col], axis=1).values for cur in currency_list])
         y = np.array([dfs[cur].loc[common_range, "change_dir"].values for cur in currency_list])
         features = df.columns.tolist()
+        features.remove("change_dir")
+        
+        return X, y, features, dfs
+
+def get_data(currency_list,
+             data_frequency,
+             pred_frequency, 
+             n_classes,
+             window_size,
+             neutral_quantile = 0.33,
+             beg_date = pd.Timestamp(2013,1,1),
+             end_date = pd.Timestamp.now(),
+             log_price = True,
+             remove_trend = False,
+             ma_period = 0,
+             include_indicators = False,
+             include_imfs = False,
+             ohlv = False,
+             drop_missing = True,
+              **kwargs):
+
+        X, y, dfs = {}, {}, {}     
+        
+        for cur in currency_list:
+            df = pd.read_csv(f"../data/0_raw/Binance/{str.lower(cur)}_usdt_{data_frequency}.csv", header=None,index_col=0)
+            try: #for the previous raw data format in the project
+                df.index = pd.to_datetime(df.index, unit='s')
+                df.drop(["Date"], axis=1, inplace=True)
+                df.rename(str.lower, axis=1, inplace=True) 
+            except: #for the current raw data format in the project
+                df.index = pd.to_datetime(df.index/1000, unit='s')
+                df.sort_index(inplace=True)
+                df.columns = ["open","high","low","close","volume"]
+            
+            if include_indicators:
+                from ta import add_all_ta_features
+                indicators_df = add_all_ta_features(df, open="open", high="high", low="low", close="close", volume="volume", fillna=True)
+                df[indicators_df.columns] = indicators_df
+            
+            if include_imfs:
+                from PyEMD import EEMD
+                eemd = EEMD(parallel=True, processes=2)
+                imfs = eemd(df["close"].values, max_imf=7)
+                imf_features = ["imf_"+str(i) for i in range(imfs.shape[0])]
+                df = pd.concat((df, pd.DataFrame(imfs.T, columns=imf_features, index=df.index)), axis=1)
+            
+            if log_price:
+                df[["close", "open", "high", "low"]] = df[["close", "open", "high", "low"]].apply(np.log, axis=1)
+                   
+            if n_classes == 3:
+                pct_diff = df['close'].pct_change()
+                quantile_value = pct_diff.abs().quantile(neutral_quantile)
+                
+                conditions = [(pct_diff < 0) & (pct_diff.abs() > quantile_value),
+                              (pct_diff > 0) & (pct_diff.abs() > quantile_value)]
+
+                classes = [0,1] # 2 is the default class if none of conditions is met, i.e. price change in the neutral range
+            
+                change_dir = np.select(conditions, classes, default=2)
+            
+            else: 
+                change_dir = df['close'].diff().apply(lambda x: 0 if x <= 0 else 1)
+            
+            df.insert(loc=0, column="change_dir", value=change_dir)   
+            
+            if remove_trend:
+#                 from statsmodels.tsa.seasonal import seasonal_decompose
+#                 components = seasonal_decompose(df["close"], model="additive", period = ma_period, two_sided=False)
+#                 df["close"] -= components.trend
+#                 df.dropna(inplace=True)
+                df['diff'] = df['close'].diff()
+                df.drop('close', axis=1, inplace=True)
+                
+            df.dropna(inplace=True)  
+            
+            if not ohlv: #keeping open, high, low, and volume
+                df.drop(["open", "high", "low", "volume"], axis=1, inplace=True)
+
+            dfs[cur] = df
+        
+        min_dates = [df.index.min() for cur, df in dfs.items()]
+        max_dates = [df.index.max() for cur, df in dfs.items()]
+        beg_date = max([max(min_dates), beg_date])
+        end_date = min([min(max_dates), end_date])
+        common_range = pd.date_range(beg_date, end_date, freq=pred_frequency)
+        
+        missing = set()
+        common_set = set(common_range)
+        for cur, df in dfs.items():
+            missing_steps = common_set.difference(df.index)
+            missing |= missing_steps
+        common_range = common_range.drop(missing)
+        
+        X = np.array([dfs[cur].loc[common_range].drop(["change_dir"], axis=1).values for cur in currency_list])
+        y = np.array([dfs[cur].loc[common_range, "change_dir"].values for cur in currency_list])
+        features = df.columns.tolist()
+        features.remove("change_dir")
         
         return X, y, features, dfs
