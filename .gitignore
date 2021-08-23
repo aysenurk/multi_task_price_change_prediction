@@ -133,3 +133,6 @@ dmypy.json
 /notebooks/wandb
 # Dask
 dask-worker-space
+
+/notebooks/lightning_logs
+/lightning_logs
