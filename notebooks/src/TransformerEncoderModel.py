@@ -1,15 +1,11 @@
-import pandas as pd
-import numpy as np
 import math
 
 import torch
 from torch import nn
 from torch.nn import functional as F
-from torch.utils.data import DataLoader, Dataset
 
-import pytorch_lightning as pl
+from .TrainerModule import *
 
-from TimeSeriesLearningUtils import TimeSeriesDataset, CosineWarmupScheduler
 
 def scaled_dot_product(q, k, v, mask=None):
     d_k = q.size()[-1]
@@ -157,64 +153,67 @@ class PositionalEncoding(nn.Module):
         x = x + self.pe[:, :x.size(1)]
         return x
 
-class TradePredictor(pl.LightningModule): 
+class TradePredictor(TrainerModule): 
     def __init__(self, 
                  train_dataset,
                  val_dataset,
                  test_dataset,
-                 calculate_loss_weights,
-                 currencies,
+                 loss_weightening,
+                 currency_list,
+                 num_classes,
                  window_size,
                  batch_size,
-                 input_dim, model_dim, num_classes, num_heads, num_layers, 
-                 lr,dropout=0.0, input_dropout=0.0,
+                 model_dim=64,
+                 num_heads=8,
+                 num_layers=4,
+                 dropout=0.5,
+                 input_dropout = 0.0,
+                 add_positional_encoding=True,
+                 max_epochs = 80,
+                 warmup_epoch = 5,
+                 learning_rate = 1e-3,
+                 weight_decay = 1e-2,
+                 random_state = 42,
+                 **kwargs,
                 ):
         """
         Inputs:
-            input_dim - Hidden dimensionality of the input
+            input_size - Hidden dimensionality of the input
             model_dim - Hidden dimensionality to use inside the Transformer
             num_classes - Number of classes to predict per sequence element
             num_heads - Number of heads to use in the Multi-Head Attention blocks
             num_layers - Number of encoder blocks to use.
-            lr - Learning rate in the optimizer
             warmup - Number of warmup steps. Usually between 50 and 500
             max_iters - Number of maximum iterations the model is trained for. This is needed for the CosineWarmup scheduler
             dropout - Dropout to apply inside the model
             input_dropout - Dropout to apply on the input features
         """
-        super().__init__()
-        self.save_hyperparameters()    
-        self.num_tasks = len(currencies)
+        self.loss_weightening = loss_weightening
+        self.num_classes = num_classes
+        self.currency_list = currency_list
+        self.num_tasks = len(currency_list)
+        self.window_size = window_size
+        self.input_size = train_dataset.x.shape[-1]
+        self.batch_size = batch_size
+
+        self.add_positional_encoding = add_positional_encoding
+
+        self.max_epochs = max_epochs
+        self.warmup_epoch = warmup_epoch
+        self.learning_rate = learning_rate
+        self.weight_decay = weight_decay
+        #self.scheduler_step = scheduler_step
+        #self.scheduler_gamma = scheduler_gamma
+       
+        super(TradePredictor, self).__init__(train_dataset, val_dataset, test_dataset, random_state)  
+
+        self.save_hyperparameters()   
 
         self._create_model()
         
-        self.f1_score = pl.metrics.F1(num_classes=self.hparams.num_classes, average="macro")
-        self.accuracy_score = pl.metrics.Accuracy()
-        
-        self.train_dl = DataLoader(train_dataset, batch_size=batch_size, shuffle = True)
-        self.val_dl = DataLoader(val_dataset, batch_size=batch_size)
-        self.test_dl = DataLoader(test_dataset, batch_size=batch_size)
-        
-        if self.hparams.calculate_loss_weights:
-            loss_weights = []
-            for i in range(self.num_tasks):
-                train_labels = [int(train_dataset[n][self.hparams.currencies[i] +"_label"] )for n in range(train_dataset.__len__())]
-                samples_size = pd.DataFrame({"label": train_labels}).groupby("label").size().to_numpy()
-                loss_weights.append((1 / samples_size) * sum(samples_size)/2)
-            self.weights = loss_weights
-        else:
-            self.weights = None
-            
-        if self.weights != None:
-            self.cross_entropy_loss = [nn.CrossEntropyLoss(weight= torch.tensor(weights).float()) for weights in self.weights]
-        else:
-            self.cross_entropy_loss = [nn.CrossEntropyLoss() for _ in range(self.num_tasks)]
-        
-        self.cross_entropy_loss = torch.nn.ModuleList(self.cross_entropy_loss)
-        
     def _create_model(self):
         # Input dim -> Model dim
-        self.input_net = nn.Linear(self.hparams.input_dim, self.hparams.model_dim)
+        self.input_net = nn.Linear(self.input_size, self.hparams.model_dim)
         
         # Positional encoding for sequences
         self.positional_encoding = PositionalEncoding(d_model=self.hparams.model_dim)
@@ -224,7 +223,7 @@ class TradePredictor(pl.LightningModule):
                                               dim_feedforward=2*self.hparams.model_dim,
                                               num_heads=self.hparams.num_heads,
                                               dropout=self.hparams.dropout)
-        # Output classifier per sequence lement
+        # Output classifier per sequence element
         self.output_net = [nn.Sequential(
             nn.Linear(self.hparams.model_dim, self.hparams.model_dim),
             nn.LayerNorm(self.hparams.model_dim),
@@ -233,10 +232,10 @@ class TradePredictor(pl.LightningModule):
             nn.Linear(self.hparams.model_dim, self.hparams.num_classes)
         ) ]* self.num_tasks
         
-        self.output_net = torch.nn.ModuleList(self.output_net)
+        self.output_net = nn.ModuleList(self.output_net)
         
     
-    def forward(self, x, i, mask=None, add_positional_encoding=True):
+    def forward(self, x, i, mask=None):
         """
         Inputs:
             x - Input features of shape [Batch, SeqLen, input_dim]
@@ -245,13 +244,12 @@ class TradePredictor(pl.LightningModule):
                                       Might not be desired for some tasks.
         """
         x = self.input_net(x)
-        if add_positional_encoding:
+        if self.add_positional_encoding:
             x = self.positional_encoding(x)
         x = self.transformer(x, mask=mask)
         x = x[:,-1,:]
         x = self.output_net[i](x)
-        
-        
+    
         return x
     
     
@@ -266,59 +264,3 @@ class TradePredictor(pl.LightningModule):
             x = self.positional_encoding(x)
         attention_maps = self.transformer.get_attention_maps(x, mask=mask)
         return attention_maps
-    
-    
-    def configure_optimizers(self):
-        optimizer = torch.optim.Adam(self.parameters(), lr=self.hparams.lr)
-        
-        # We don't return the lr scheduler because we need to apply it per iteration, not per epoch
-        self.lr_scheduler = CosineWarmupScheduler(optimizer, 
-                                                  warmup = self.train_dl.__len__() * 10, 
-                                                  max_iters = 80* self.train_dl.__len__())
-        return optimizer
-    
-    
-    def optimizer_step(self, *args, **kwargs):
-        super().optimizer_step(*args, **kwargs)
-        self.lr_scheduler.step() # Step per iteration
-
-    def _calculate_loss(self, batch, mode="train"):
-        
-        loss = (torch.tensor(0.0, device="cuda:0", requires_grad=True) + \
-                torch.tensor(0.0, device="cuda:0", requires_grad=True)) 
-        for i in range(self.num_tasks):
-            x, y = batch[self.hparams.currencies[i] + "_window"], batch[self.hparams.currencies[i] + "_label"]
-  
-            preds = self.forward(x, i, add_positional_encoding=True) # No positional encodings as it is a set, not a sequence!
-
-            loss += self.cross_entropy_loss[i](preds, y) # Softmax/CE over set dimension
-            
-            acc = self.accuracy_score(torch.max(preds, dim=1)[1], y)
-            self.log(self.hparams.currencies[i] + "_%s_acc" % mode, acc, on_step=False,  prog_bar=True, on_epoch=True)
-            
-            f1 = self.f1_score(torch.max(preds, dim=1)[1], y)
-            self.log(self.hparams.currencies[i] + "_%s_f1" % mode, f1, on_step=False,  prog_bar=True, on_epoch=True)
-        
-        loss = loss / torch.tensor(self.num_tasks)
-        self.log("%s_loss" % mode, loss, on_epoch=True, prog_bar=True)
-        
-        return loss
-    
-    def training_step(self, batch, batch_idx):
-        loss = self._calculate_loss(batch, mode="train")
-        return loss
-    
-    def validation_step(self, batch, batch_idx):
-        _ = self._calculate_loss(batch, mode="val")
-    
-    def test_step(self, batch, batch_idx):
-        _ = self._calculate_loss(batch, mode="test") 
-    
-    def train_dataloader(self):
-        return self.train_dl
-
-    def val_dataloader(self):
-        return self.val_dl
-
-    def test_dataloader(self):
-        return self.test_dl
