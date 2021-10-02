@@ -1,13 +1,7 @@
 import pandas as pd
 import numpy as np
-
 import torch
-from torch import nn
-from torch.nn import functional as F
-from torch.utils.data import DataLoader, Dataset
-
-import pytorch_lightning as pl
-from datetime import datetime
+from torch.utils.data import  Dataset
 
 class TimeSeriesDataset(Dataset):
     def __init__(self, 
@@ -90,25 +84,20 @@ def get_data2(currency_list,
              end_date = pd.Timestamp.now(),
              log_price = True,
              remove_trend = False,
+             decompose = False,
              ma_period = 0,
              indicators = False,
              imfs = False,
              ohlv = False,
-             drop_missing = True,
               **kwargs):
 
         X, y, dfs = {}, {}, {}     
-        
+       
         for cur in currency_list:
             df = pd.read_csv(f"../data/0_raw/Binance/{str.lower(cur)}_usdt_{data_frequency}.csv", header=None,index_col=0)
-            try: #for the previous raw data format in the project
-                df.index = pd.to_datetime(df.index, unit='s')
-                df.drop(["Date"], axis=1, inplace=True)
-                df.rename(str.lower, axis=1, inplace=True) 
-            except: #for the current raw data format in the project
-                df.index = pd.to_datetime(df.index/1000, unit='s')
-                df.sort_index(inplace=True)
-                df.columns = ["open","high","low","close","volume"]
+            df.columns = ["open","high","low","close","volume"]
+            df.index = pd.to_datetime(df.index, unit='ms')
+            df.sort_index(inplace=True)
             
             if indicators:
                 from ta import add_all_ta_features
@@ -127,7 +116,7 @@ def get_data2(currency_list,
                    
             if num_classes == 3:
                 df['pct_diff'] = df['close'].pct_change()
-                neutral_quantiles = df['pct_diff'].abs().quantile(neutral_quantile)
+                neutral_quantiles = df['pct_diff'].abs().quantile(neutral_quantile).loc[neutral_quantile]
                 
                 conditions = [(df['pct_diff'] < 0) & (df['pct_diff'].abs() > neutral_quantiles),
                               (df['pct_diff'] > 0) & (df['pct_diff'].abs() > neutral_quantiles)]
@@ -148,6 +137,17 @@ def get_data2(currency_list,
                 components = seasonal_decompose(df["close"], model="additive", period = ma_period, two_sided=False)
                 df["close"] -= components.trend
                 df.dropna(inplace=True)
+
+            if decompose: 
+                from statsmodels.tsa.seasonal import seasonal_decompose
+                ma_period = ma_period if pred_frequency in ['d', 'D'] else ma_period * 4 #if pred_frequency is 6h, then multiply the ma_period by 4 
+                components = seasonal_decompose(df["close"], model="additive", period = ma_period, two_sided=False)
+                df['trend'] = components.trend
+                df['residual'] = components.resid  
+                df['seasonal'] = components.seasonal
+                df.dropna(inplace=True)  
+            else:
+                df.drop('close', axis=1, inplace=True)
                 
             if not ohlv: #keeping open, high, low, and volume
                 df.drop(["open", "high", "low", "volume"], axis=1, inplace=True)
@@ -174,7 +174,7 @@ def get_data2(currency_list,
         features = df.columns.tolist()
         features.remove("change_dir")
         
-        return X, y, features, dfs
+        return X, y, features, dfs, common_range
 
 def get_data(currency_list,
              data_frequency,
@@ -186,44 +186,41 @@ def get_data(currency_list,
              end_date = pd.Timestamp.now(),
              log_price = True,
              remove_trend = False,
+             decompose = False,
              ma_period = 0,
              indicators = False,
              imfs = False,
              ohlv = False,
-             drop_missing = True,
               **kwargs):
 
         X, y, dfs = {}, {}, {}     
         
         for cur in currency_list:
-            df = pd.read_csv(f"../data/0_raw/Binance/{str.lower(cur)}_usdt_{data_frequency}.csv", header=None,index_col=0)
-            try: #for the previous raw data format in the project
-                df.index = pd.to_datetime(df.index, unit='s')
-                df.drop(["Date"], axis=1, inplace=True)
-                df.rename(str.lower, axis=1, inplace=True) 
-            except: #for the current raw data format in the project
-                df.index = pd.to_datetime(df.index/1000, unit='s')
-                df.sort_index(inplace=True)
-                df.columns = ["open","high","low","close","volume"]
-            
+            dir = "C:/Users/Furkan/Documents/multi_task_price_change_prediction/" #needed if Training.py runs
+            df = pd.read_csv(dir+f"data/0_raw/Binance/{str.lower(cur)}_usdt_{data_frequency}.csv", header=None,index_col=0)
+            #df = pd.read_csv(f"../data/0_raw/Binance/{str.lower(cur)}_usdt_{data_frequency}.csv", header=None,index_col=0)
+            df.columns = ["open","high","low","close","volume"]
+            df.index = pd.to_datetime(df.index, unit='ms')
+            df.sort_index(inplace=True)
+           
             if indicators:
                 from ta import add_all_ta_features
                 indicators_df = add_all_ta_features(df, open="open", high="high", low="low", close="close", volume="volume", fillna=True)
                 df[indicators_df.columns] = indicators_df
-            
+          
             if imfs:
                 from PyEMD import EEMD
                 eemd = EEMD(parallel=True, processes=2)
-                imfs = eemd(df["close"].values, max_imf=7)
-                imf_features = ["imf_"+str(i) for i in range(imfs.shape[0])]
-                df = pd.concat((df, pd.DataFrame(imfs.T, columns=imf_features, index=df.index)), axis=1)
+                imfs_result = eemd(df["close"].values, max_imf=7)
+                imf_features = ["imf_"+str(i) for i in range(imfs_result.shape[0])]
+                df = pd.concat((df, pd.DataFrame(imfs_result.T, columns=imf_features, index=df.index)), axis=1)
             
             if log_price:
                 df[["close", "open", "high", "low"]] = df[["close", "open", "high", "low"]].apply(np.log, axis=1)
                    
             if num_classes == 3:
                 pct_diff = df['close'].pct_change()
-                quantile_value = pct_diff.abs().quantile(neutral_quantile)
+                quantile_value = pct_diff.abs().quantile(neutral_quantile).loc[neutral_quantile]
                 
                 conditions = [(pct_diff < 0) & (pct_diff.abs() > quantile_value),
                               (pct_diff > 0) & (pct_diff.abs() > quantile_value)]
@@ -238,15 +235,25 @@ def get_data(currency_list,
             df.insert(loc=0, column="change_dir", value=change_dir)   
             
             if remove_trend:
-#                 from statsmodels.tsa.seasonal import seasonal_decompose
-#                 components = seasonal_decompose(df["close"], model="additive", period = ma_period, two_sided=False)
-#                 df["close"] -= components.trend
-#                 df.dropna(inplace=True)
+                #from statsmodels.tsa.seasonal import seasonal_decompose
+                #ma_period = ma_period if pred_frequency in ['d', 'D'] else ma_period * 4
+                #components = seasonal_decompose(df["close"], model="additive", period = ma_period, two_sided=False)
+                #df["close"] -= components.trend
                 df['diff'] = df['close'].diff()
+                #df['diff'] = df['close'].pct_change()
+                df.dropna(inplace=True) 
+
+            if decompose: 
+                from statsmodels.tsa.seasonal import seasonal_decompose
+                ma_period = ma_period if pred_frequency in ['d', 'D'] else ma_period * 4 #if pred_frequency is 6h, then multiply the ma_period by 4 
+                components = seasonal_decompose(df["close"], model="additive", period = ma_period, two_sided=False)
+                df['trend'] = components.trend
+                df['residual'] = components.resid  
+                df['seasonal'] = components.seasonal
+                df.dropna(inplace=True)  
+            else:
                 df.drop('close', axis=1, inplace=True)
-                
-            df.dropna(inplace=True)  
-            
+
             if not ohlv: #keeping open, high, low, and volume
                 df.drop(["open", "high", "low", "volume"], axis=1, inplace=True)
 
@@ -269,5 +276,5 @@ def get_data(currency_list,
         y = np.array([dfs[cur].loc[common_range, "change_dir"].values for cur in currency_list])
         features = df.columns.tolist()
         features.remove("change_dir")
-        
-        return X, y, features, dfs
+
+        return X, y, features, dfs, common_range
