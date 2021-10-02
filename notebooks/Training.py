@@ -110,7 +110,7 @@ data_setting = {
     "ohlv": [False]
     }
 
-hparams = { 
+model_params = { 
     "model_name":['lstm'],
     "lstm_hidden_size": [128],#[64, 128],
     "n_lstm_layers": [2], #[1,3,5],
@@ -121,7 +121,7 @@ hparams = {
     "last_layer_size": [32]
     }
 
-train_setup = {
+hparams = {
     "loss_weightening": [True],
     "batch_size": [16],
     "max_epochs":[80],
@@ -130,7 +130,7 @@ train_setup = {
     "weight_decay": [1e-2]
     }
 
-param_grid = {**hparams, **train_setup, **data_setting}
+param_grid = {**model_params, **hparams, **data_setting}
 
 
 from pprint import pprint
