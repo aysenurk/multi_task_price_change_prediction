@@ -41,7 +41,7 @@ class TimeSeriesDataset(Dataset):
         self.seq_len = window_size * self.freq_multiplier
         self.pred_indicies = np.arange(0, len(x[0]), self.freq_multiplier)
         self.x = torch.tensor(x).float()
-        self.y = torch.tensor(y[:, self.pred_indicies]).long()
+        self.y = torch.tensor(y).long()
         
         _, val_percentage, test_percentage = dataset_percentages
         self.total_size = len(self.pred_indicies)
@@ -69,11 +69,12 @@ class TimeSeriesDataset(Dataset):
         item = dict()
         
         if self.data_use_type =="val":
-            index = self.train_size + index - self.seq_len
+            index = self.train_size + index * self.freq_multiplier - self.seq_len
             
         elif self.data_use_type =="test":
-            index = self.train_size + self.val_size + index - self.seq_len
-            
+            index = self.train_size + self.val_size + index * self.freq_multiplier - self.seq_len
+        else:
+            index *= self.freq_multiplier
         
         for i in range(self.n_currencies):
             window = self.x[i][index:index+self.seq_len]
@@ -86,14 +87,10 @@ class TimeSeriesDataset(Dataset):
                 window = (window - self.train_mean[i]) / (self.train_std[i] + 0.00001)
             
             item[self.currencies[i] + "_window"] = window
-            if self.freq_multiplier == 1:
-                item[self.currencies[i] + "_label"]  = self.y[i][index+self.seq_len]
-            else:
-                if self.data_use_type != 'train':
-                    index += self.seq_len
-                item[self.currencies[i] + "_label"]  = self.y[i][index]
-
+            item[self.currencies[i] + "_label"]  = self.y[i][index+self.seq_len]
+ 
         return item
+
 
 class CosineWarmupScheduler(torch.optim.lr_scheduler._LRScheduler):
     
