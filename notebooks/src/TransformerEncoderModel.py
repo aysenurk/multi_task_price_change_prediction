@@ -192,7 +192,7 @@ class TradePredictor(TrainerModule):
         self.num_classes = num_classes
         self.currency_list = currency_list
         self.num_tasks = len(currency_list)
-        self.window_size = window_size
+        self.window_size = train_dataset.seq_len
         self.input_size = train_dataset.x.shape[-1]
         self.batch_size = batch_size
 
