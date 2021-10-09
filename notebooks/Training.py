@@ -51,7 +51,7 @@ def experiment(config, seed=42):
     config["dataset_sizes"] = [len(train_dataset), len(val_dataset), len(test_dataset)]
     WANDBPROJECT = "furkan-deneme9"
     MODEL_NAME = name_model(config)
-
+    
     wandb.init(project=WANDBPROJECT,######
                config=config,
                #entity='multi_task_price_prediction',
@@ -95,8 +95,8 @@ from sklearn.model_selection import ParameterGrid
 
 data_setting = {
     "num_classes": [2],#[2,3],
-    "currency_list":  [['BTC', 'ETH', 'LTC']],#,[['BTC']],#[['ADA'], ['BTC'], ['ETH'], ['LTC'], ['XRP']],
-    "window_size": [100], 
+    "currency_list":  [['ETH']],#,[['BTC']],#[['ADA'], ['BTC'], ['ETH'], ['LTC'], ['XRP']],
+    "window_size": [100], #test 
     "dataset_percentages": [[0.9, 0.05, 0.05]],
     "data_frequency": ["1d"], 
     "pred_frequency": ["1d"], 
@@ -111,7 +111,7 @@ data_setting = {
     }
 
 model_params = { 
-    "model_name":['lstm'],
+    "model_name":['mlp'],
     "lstm_hidden_size": [128],#[64, 128],
     "n_lstm_layers": [2], #[1,3,5],
     "bidirectional": [True],
@@ -123,8 +123,8 @@ model_params = {
 
 hparams = {
     "loss_weightening": [True],
-    "batch_size": [16],
-    "max_epochs":[80],
+    "batch_size": [8],
+    "max_epochs":[30],
     "warmup_epoch": [10],
     "learning_rate": [1e-3],
     "weight_decay": [1e-2]
@@ -136,8 +136,9 @@ param_grid = {**model_params, **hparams, **data_setting}
 from pprint import pprint
 
 if __name__ == '__main__':
+
     for i in range(1):
         for config in (ParameterGrid(param_grid)):
-            pprint(config)
+            #pprint(config)
             seed = 42#i
             experiment(config, seed)
