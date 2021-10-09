@@ -1,7 +1,14 @@
+import os
 import pandas as pd
 import numpy as np
 import torch
 from torch.utils.data import  Dataset
+
+dir = os.path.abspath(
+    os.path.join(
+        os.path.dirname(__file__), "..", ".."
+    )
+)
 
 class TimeSeriesDataset(Dataset):
     def __init__(self, 
@@ -119,7 +126,7 @@ def get_data(currency_list,
         X, y, dfs = {}, {}, {}     
         
         for cur in currency_list:
-            df = pd.read_csv(f"../data/0_raw/Binance/{str.lower(cur)}_usdt_{data_frequency}.csv", header=None,index_col=0)
+            df = pd.read_csv(dir+f"/data/0_raw/Binance/{str.lower(cur)}_usdt_{data_frequency}.csv", header=None,index_col=0)
             df.index = pd.to_datetime(df.index, unit='ms')
             df.sort_index(inplace=True)
             df.columns = ["open","high","low","close","volume"]
