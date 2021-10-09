@@ -28,7 +28,7 @@ class MLP(TrainerModule):
         self.num_classes = num_classes
         self.currency_list = currency_list
         self.num_tasks = len(currency_list)
-        self.window_size = window_size
+        self.window_size = train_dataset.seq_len
         self.input_size = train_dataset.x.shape[-1]
         self.batch_size = batch_size
         self.loss_weightening = loss_weightening
@@ -47,10 +47,10 @@ class MLP(TrainerModule):
         self.layers = nn.Sequential(
           nn.Linear(self.window_size*self.input_size, 100),
           nn.ReLU(),
-          #nn.BatchNorm1d(100),
-          #nn.Dropout(0.50),
-          #nn.Linear(100, 100),
-          #nn.ReLU(),
+          nn.BatchNorm1d(100),
+          nn.Dropout(0.50),
+          #nn.Linear(100, 32),
+          #nn.ReLU()
           #nn.BatchNorm1d(100),
           #nn.Dropout(0.50),
           #nn.Linear(50, self.num_classes)
@@ -64,7 +64,7 @@ class MLP(TrainerModule):
         
         if self.dropout_before_output_layer:
           self.dropout1 = nn.Dropout(self.dropout_before_output_layer)
-          
+            
         self.output_layers = [nn.Linear(self.last_layer_size, self.num_classes)] * self.num_tasks
         self.output_layers = nn.ModuleList(self.output_layers)
     
