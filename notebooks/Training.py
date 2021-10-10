@@ -14,8 +14,16 @@ from src.TimeSeriesLearningUtils import *
 from src.LSTMModel import *
 from src.TransformerEncoderModel import *
 from src.MLP import *
+
 MODEL_CLASSES = {'lstm': LSTM_based_classification_model, 'transformer': TradePredictor, 'mlp':MLP}
 
+#beginning and ending dates of common range of BTC, ETH, LTC, ADA, and XRP for both 6h and 1h datasets
+FIRST_DATE = '2018-05-04'
+LAST_DATE = '2021-08-13'
+
+#beginning and ending dates of common range of BTC, ETH, and LTC for both 6h and 1h datasets
+FIRST_DATE2 = '2017-12-13'
+LAST_DATE2 = '2021-08-13'
 
 def name_model(config):
     name =[]
@@ -99,7 +107,9 @@ data_setting = {
     "window_size": [100], #test 
     "dataset_percentages": [[0.9, 0.05, 0.05]],
     "data_frequency": ["1d"], 
-    "pred_frequency": ["1d"], 
+    "pred_frequency": ["1d"],
+    "beg_date": [FIRST_DATE],
+    "end_date": [LAST_DATE], 
     "ma_period": [7],
     "neutral_quantile": [0.33],
     "log_price": [True],

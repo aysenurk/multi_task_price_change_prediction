@@ -9,6 +9,9 @@ dir = os.path.abspath(
         os.path.dirname(__file__), "..", ".."
     )
 )
+#beginning and ending dates of common range of BTC, ETH, LTC, ADA, and XRP for both 6h and 1h datasets
+FIRST_DATE = '2018-05-04'
+LAST_DATE = '2021-08-13'
 
 class TimeSeriesDataset(Dataset):
     def __init__(self, 
@@ -113,10 +116,9 @@ def get_data(currency_list,
              data_frequency,
              pred_frequency, 
              num_classes,
-             window_size,
              neutral_quantile = 0.33,
-             beg_date = pd.Timestamp(2017,1,1),
-             end_date = pd.Timestamp.now(),
+             beg_date = FIRST_DATE,
+             end_date = LAST_DATE,
              log_price = True,
              remove_trend = False,
              decompose = False,
@@ -126,8 +128,11 @@ def get_data(currency_list,
              ohlv = False,
               **kwargs):
 
+        beg_date = pd.Timestamp(beg_date)
+        end_date = pd.Timestamp(end_date)
+
         X, y, dfs = {}, {}, {}     
-        
+    
         for cur in currency_list:
             df = pd.read_csv(dir+f"/data/0_raw/Binance/{str.lower(cur)}_usdt_{data_frequency}.csv", header=None,index_col=0)
             df.index = pd.to_datetime(df.index, unit='ms')
