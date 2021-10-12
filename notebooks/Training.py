@@ -57,7 +57,7 @@ def experiment(config, seed=42):
                                                                   **config) for dtype in ['train', 'val', 'test']]
 
     config["dataset_sizes"] = [len(train_dataset), len(val_dataset), len(test_dataset)]
-    WANDBPROJECT = "furkan-deneme9"
+    WANDBPROJECT = "mlp-xaiver"
     MODEL_NAME = name_model(config)
     
     wandb.init(project=WANDBPROJECT,######
@@ -103,13 +103,13 @@ from sklearn.model_selection import ParameterGrid
 
 data_setting = {
     "num_classes": [2],#[2,3],
-    "currency_list":  [['ETH']],#,[['BTC']],#[['ADA'], ['BTC'], ['ETH'], ['LTC'], ['XRP']],
+    "currency_list":[['BTC'], ['ETH'], ['LTC']],#[['BTC', 'ETH', 'LTC']],# [['BTC'], ['ETH'], ['LTC']],#,[['BTC']],#[['ADA'], ['BTC'], ['ETH'], ['LTC'], ['XRP']],
     "window_size": [100], #test 
     "dataset_percentages": [[0.9, 0.05, 0.05]],
     "data_frequency": ["1d"], 
     "pred_frequency": ["1d"],
     "beg_date": [FIRST_DATE],
-    "end_date": [LAST_DATE], 
+    "end_date": ['2020-1-1'], 
     "ma_period": [7],
     "neutral_quantile": [0.33],
     "log_price": [True],
@@ -121,14 +121,15 @@ data_setting = {
     }
 
 model_params = { 
-    "model_name":['mlp'],
+    "model_name":['transformer'],
     "lstm_hidden_size": [128],#[64, 128],
-    "n_lstm_layers": [2], #[1,3,5],
+    "n_lstm_layers": [1], #[1,3,5],
     "bidirectional": [True],
     "dropout_after_each_lstm_layer": [0.5],
-    "dropout_before_output_layer": [0.5],
+    "dropout_before_output_layer": [0.25],
     "batch_norm_after_each_lstm_layer":[True],
-    "last_layer_size": [32]
+    "last_layer_size": [32],
+    "add_positional_encoding" : [True, False]
     }
 
 hparams = {
@@ -137,7 +138,8 @@ hparams = {
     "max_epochs":[30],
     "warmup_epoch": [10],
     "learning_rate": [1e-3],
-    "weight_decay": [1e-2]
+    "weight_decay": [1e-2],
+    "xaiver_weights_init" : [True]
     }
 
 param_grid = {**model_params, **hparams, **data_setting}
@@ -147,8 +149,8 @@ from pprint import pprint
 
 if __name__ == '__main__':
 
-    for i in range(1):
-        for config in (ParameterGrid(param_grid)):
+    for config in (ParameterGrid(param_grid)):
+        for i in range(5):
             #pprint(config)
-            seed = 42#i
+            seed = i
             experiment(config, seed)

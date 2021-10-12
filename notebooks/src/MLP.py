@@ -15,6 +15,7 @@ class MLP(TrainerModule):
                  batch_size,
                  last_layer_size,
                  dropout_before_output_layer,
+                 xaiver_weights_init = False,
                  max_epochs = 80,
                  warmup_epoch = 5,
                  learning_rate = 1e-3,
@@ -34,7 +35,7 @@ class MLP(TrainerModule):
         self.loss_weightening = loss_weightening
         self.dropout_before_output_layer = dropout_before_output_layer
         self.last_layer_size = last_layer_size
-
+        self.xaiver_weights_init = xaiver_weights_init
         self.max_epochs = max_epochs
         self.warmup_epoch = warmup_epoch
         self.learning_rate = learning_rate
@@ -48,9 +49,9 @@ class MLP(TrainerModule):
           nn.Linear(self.window_size*self.input_size, 100),
           nn.ReLU(),
           nn.BatchNorm1d(100),
-          nn.Dropout(0.50),
-          #nn.Linear(100, 32),
-          #nn.ReLU()
+          nn.Dropout(0.25),
+          #nn.Linear(100, 100),
+          #nn.ReLU(),
           #nn.BatchNorm1d(100),
           #nn.Dropout(0.50),
           #nn.Linear(50, self.num_classes)
@@ -67,7 +68,9 @@ class MLP(TrainerModule):
             
         self.output_layers = [nn.Linear(self.last_layer_size, self.num_classes)] * self.num_tasks
         self.output_layers = nn.ModuleList(self.output_layers)
-    
+        
+        if self.xaiver_weights_init:
+          self.initialize_weights()
     
     def forward(self, x, n):
         x = x.view(x.size(0), -1)
@@ -78,3 +81,13 @@ class MLP(TrainerModule):
             x = self.dropout1(x)       
         x = self.output_layers[n](x)
         return x
+
+    def initialize_weights(self):
+      def init_weights(m):
+        if isinstance(m, nn.Linear):
+            torch.nn.init.xavier_uniform_(m.weight)
+            m.bias.data.fill_(0.01)
+
+      self.layers.apply(init_weights)
+      self.linear1.apply(init_weights)
+      self.output_layers.apply(init_weights)
